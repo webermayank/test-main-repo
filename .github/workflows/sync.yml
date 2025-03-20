@@ -1,0 +1,39 @@
+name: Sync Documentation Changes
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docs/**'
+
+jobs:
+  sync-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout the main repo
+      - name: Checkout main repo
+        uses: actions/checkout@v4.2.2
+
+      # Detect changed files
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v46.0.1
+        with:
+          files: |
+            docs/**
+
+      # Create issue in website repo if files changed
+      - name: Create issue in website repo
+        if: steps.changed-files.outputs.any_changed == 'true'
+        uses: actions/github-script@v7.0.1
+        with:
+          github-token: ${{ secrets.WEBSITE_REPO_TOKEN }}
+          script: |
+            const changedFiles = "${{ steps.changed-files.outputs.all_changed_files }}";
+            await github.rest.issues.create({
+              owner: "webermayank",
+              repo: "test-website-repo",
+              title: "Documentation Change in Main Repo - Translation Needed",
+              body: `The following documentation files were updated in the **test-main-repo**:\n\n- ${changedFiles.split(' ').join('\n- ')}\n\nPlease translate the changes into the supported languages for the website.`
+            });
