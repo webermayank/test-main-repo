@@ -1,6 +1,10 @@
 name: Sync Documentation Changes
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
   pull_request:
     branches: [main]
     paths:
