@@ -15,11 +15,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout the main repo
       - name: Checkout main repo
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
 
-      # Detect changed files
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
       - name: Get changed files
         id: changed-files
         uses: tj-actions/changed-files@v46.0.1
@@ -27,7 +32,21 @@ jobs:
           files: |
             docs/**
 
-      # Create issue in website repo if files changed
+      - name: Get changed lines
+        id: changed-lines
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+            git diff HEAD^ HEAD --unified=0 -- "docs/**" > diff.txt
+            node src/scripts/parse-diff.js > changed-lines.txt  # Updated path
+            echo "CHANGED_LINES=$(cat changed-lines.txt)" >> $GITHUB_ENV
+
+      - name: Get supported languages
+        id: supported-languages
+        run: |
+          git clone https://github.com/webermayank/test-website-repo.git
+          languages=$(ls -d test-website-repo/translations/*/ | sed 's|test-website-repo/translations/||g' | sed 's|/||g' | grep -v 'en' | tr '\n' ', ')
+          echo "SUPPORTED_LANGUAGES=$languages" >> $GITHUB_ENV
+
       - name: Create issue in website repo
         if: steps.changed-files.outputs.any_changed == 'true'
         uses: actions/github-script@v7.0.1
@@ -35,9 +54,11 @@ jobs:
           github-token: ${{ secrets.WEBSITE_REPO_TOKEN }}
           script: |
             const changedFiles = "${{ steps.changed-files.outputs.all_changed_files }}";
+            const changedLines = "${{ env.CHANGED_LINES }}";
+            const supportedLanguages = "${{ env.SUPPORTED_LANGUAGES }}";
             await github.rest.issues.create({
               owner: "webermayank",
               repo: "test-website-repo",
               title: "Documentation Change in Main Repo - Translation Needed",
-              body: `The following documentation files were updated in the **test-main-repo**:\n\n- ${changedFiles.split(' ').join('\n- ')}\n\nPlease translate the changes into the supported languages for the website.`
+              body: `Translation needed for the following files:\n\n${changedLines}\n\nPlease translate these changes into the supported languages: ${supportedLanguages}`
             });
