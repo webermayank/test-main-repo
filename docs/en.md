@@ -2,4 +2,4 @@
  
 good morning
 
-lets test the teanslation process
+lets test the teanslation
