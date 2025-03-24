@@ -4,6 +4,8 @@ const diff = fs.readFileSync('diff.txt', 'utf8').split('\n');
 let currentFile = '';
 const changes = {};
 
+console.log(diff, "before diff");
+
 for (const line of diff) {
   if (line.startsWith('diff --git')) {
     currentFile = line.split(' ')[2].replace('a/', '');
@@ -20,6 +22,7 @@ for (const line of diff) {
     }
   }
 }
+console.log(diff,"after");
 
 const output = Object.entries(changes)
   .map(([file, lines]) => `- ${file} (lines ${lines.join(', ')})`)

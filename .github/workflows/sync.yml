@@ -37,7 +37,7 @@ jobs:
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
             git diff HEAD^ HEAD --unified=0 -- "docs/**" > diff.txt
-            node scripts/parse-diff.js > changed-lines.txt  # Updated path
+            node scripts/parse-diff.js > changed-lines.txt  
             echo "CHANGED_LINES=$(cat changed-lines.txt)" >> $GITHUB_ENV
 
       - name: Get supported languages
