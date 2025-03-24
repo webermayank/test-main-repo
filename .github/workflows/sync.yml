@@ -18,7 +18,7 @@ jobs:
       - name: Checkout main repo
         uses: actions/checkout@v3
         with:
-          fetch-depth: 2  # To get the previous commit for diff
+          fetch-depth: 0  # Full history to ensure git diff works
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -36,9 +36,16 @@ jobs:
         id: changed-lines
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
+          echo "Changed files: ${{ steps.changed-files.outputs.all_changed_files }}"
           git diff HEAD^ HEAD --unified=0 -- "docs/**" > diff.txt
-          node scripts/parse-diff.js > changed-lines.txt
-          echo "CHANGED_LINES=$(cat changed-lines.txt)" >> $GITHUB_ENV
+          echo "Diff content:"
+          cat diff.txt
+          node scripts/parse-diff.js
+          echo "Changed lines content:"
+          cat changed-lines.txt
+          # Remove newlines and set CHANGED_LINES
+          changed_lines=$(cat changed-lines.txt | tr '\n' ' ')
+          echo "CHANGED_LINES=$changed_lines" >> $GITHUB_ENV
 
       - name: Get supported languages
         id: supported-languages
