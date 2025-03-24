@@ -18,7 +18,7 @@ jobs:
       - name: Checkout main repo
         uses: actions/checkout@v3
         with:
-          fetch-depth: 2
+          fetch-depth: 2  # To get the previous commit for diff
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -36,9 +36,9 @@ jobs:
         id: changed-lines
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
-            git diff HEAD^ HEAD --unified=0 -- "docs/**" > diff.txt
-            node scripts/parse-diff.js > changed-lines.txt  
-            echo "CHANGED_LINES=$(cat changed-lines.txt)" >> $GITHUB_ENV
+          git diff HEAD^ HEAD --unified=0 -- "docs/**" > diff.txt
+          node scripts/parse-diff.js > changed-lines.txt
+          echo "CHANGED_LINES=$(cat changed-lines.txt)" >> $GITHUB_ENV
 
       - name: Get supported languages
         id: supported-languages
@@ -48,7 +48,7 @@ jobs:
           echo "SUPPORTED_LANGUAGES=$languages" >> $GITHUB_ENV
 
       - name: Create issue in website repo
-        if: steps.changed-files.outputs.any_changed == 'true'
+        if: github.event_name == 'push' &&  steps.changed-files.outputs.any_changed == 'true'
         uses: actions/github-script@v7.0.1
         with:
           github-token: ${{ secrets.WEBSITE_REPO_TOKEN }}
