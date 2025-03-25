@@ -39,10 +39,11 @@ process.stdin.on('end', () => {
       console.log(`Detected deleted file: ${currentFile}`);
     } else if (line.startsWith('@@')) {
       console.log('Found diff line:', line);
-      const match = line.match(/@@ -(\d+),(\d+) \+(\d+),(\d+) @@(?: .*)?/);
+      // Updated regex to handle single line removals
+      const match = line.match(/@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?/);
       if (match) {
         const startLine = parseInt(match[3]);
-        const lineCount = parseInt(match[4]);
+        const lineCount = match[4] ? parseInt(match[4]) : 1; // Default to 1 if no count specified
         const endLine = startLine + lineCount - 1;
         if (!changes[currentFile]) {
           changes[currentFile] = [];
