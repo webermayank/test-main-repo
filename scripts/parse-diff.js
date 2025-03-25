@@ -8,6 +8,12 @@ process.stdin.on('data', (chunk) => {
 });
 
 process.stdin.on('end', () => {
+  if (!diff.trim()) {
+    console.log('No diff content received.');
+    fs.writeFileSync('changed-lines.json', JSON.stringify({ changes: {} }, null, 2));
+    return;
+  }
+
   const diffLines = diff.split('\n');
   console.log('Diff content:', diffLines);
 
@@ -33,7 +39,6 @@ process.stdin.on('end', () => {
       console.log(`Detected deleted file: ${currentFile}`);
     } else if (line.startsWith('@@')) {
       console.log('Found diff line:', line);
-      // Updated regex to match with optional context
       const match = line.match(/@@ -(\d+),(\d+) \+(\d+),(\d+) @@(?: .*)?/);
       if (match) {
         const startLine = parseInt(match[3]);

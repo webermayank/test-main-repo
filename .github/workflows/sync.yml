@@ -37,14 +37,11 @@ jobs:
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
           echo "Changed files: ${{ steps.changed-files.outputs.all_changed_files }}"
-          git diff HEAD^ HEAD --unified=0 -- "docs/**" > diff.txt
-          echo "Diff content:"
-          cat diff.txt
-          node scripts/parse-diff.js
-          echo "Changed lines content:"
-          cat changed-lines.txt
-          # Remove newlines and set CHANGED_LINES
-          changed_lines=$(cat changed-lines.txt | tr '\n' ' ')
+          git diff HEAD^ HEAD --unified=0 -- "docs/**" | node scripts/parse-diff.js
+          echo "Changed lines JSON content:"
+          cat changed-lines.json
+          changed_lines=$(node -e "const data = require('./changed-lines.json'); console.log(Object.entries(data.changes).map(([file, lines]) => '- ' + file + ' (' + (lines.includes('new file') ? 'new file' : lines.includes('deleted') ? 'deleted' : 'lines ' + lines.join(', ')) + ')').join(' '))")
+          echo "Formatted changed lines: $changed_lines"
           echo "CHANGED_LINES=$changed_lines" >> $GITHUB_ENV
 
       - name: Get supported languages
