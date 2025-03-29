@@ -4,11 +4,11 @@ on:
   push:
     branches: [main]
     paths:
-      - 'docs/**'
+      - 'src/**/*.js'  # Target JavaScript files
   pull_request:
     branches: [main]
     paths:
-      - 'docs/**'
+      - 'src/**/*.js'
 
 jobs:
   sync-docs:
@@ -18,7 +18,7 @@ jobs:
       - name: Checkout main repo
         uses: actions/checkout@v3
         with:
-          fetch-depth: 1  # Full history to ensure git diff works
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -30,17 +30,19 @@ jobs:
         uses: tj-actions/changed-files@v46.0.1
         with:
           files: |
-            docs/**
+            src/**/*.js
 
       - name: Get changed lines
         id: changed-lines
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
           echo "Changed files: ${{ steps.changed-files.outputs.all_changed_files }}"
-          git diff HEAD^ HEAD --unified=0 -- "docs/**" | node scripts/parse-diff.js
+          git diff HEAD^ HEAD --unified=0 -- "src/**/*.js" | node scripts/parse-diff.js
           echo "Changed lines JSON content:"
           cat changed-lines.json
-          changed_lines=$(node -e "const data = require('./changed-lines.json'); console.log(Object.entries(data.changes).map(([file, lines]) => '- ' + file + ' (' + (lines.includes('new file') ? 'new file' : lines.includes('deleted') ? 'deleted' : 'lines ' + lines.join(', ')) + ')').join(' '))")
+          has_doc_change=$(node -e "const data = require('./changed-lines.json'); console.log(data.hasDocumentationChange ? 'true' : 'false')")
+          echo "HAS_DOCUMENTATION_CHANGE=$has_doc_change" >> $GITHUB_ENV
+          changed_lines=$(node -e "const data = require('./changed-lines.json'); console.log(Object.entries(data.changes).map(([file, changes]) => changes.map(change => '- ' + file + ' (lines ' + change.lines + ')' + (change.context ? ' [' + change.context.map(c => 'Start: \"' + c.start + '\" | End: \"' + c.end + '\"').join('; ') + ']' : '')).join(' '))")
           echo "Formatted changed lines: $changed_lines"
           echo "CHANGED_LINES=$changed_lines" >> $GITHUB_ENV
 
@@ -52,7 +54,7 @@ jobs:
           echo "SUPPORTED_LANGUAGES=$languages" >> $GITHUB_ENV
 
       - name: Create issue in website repo
-        if: github.event_name == 'push' &&  steps.changed-files.outputs.any_changed == 'true'
+        if: github.event_name == 'push' && steps.changed-files.outputs.any_changed == 'true' && env.HAS_DOCUMENTATION_CHANGE == 'true'
         uses: actions/github-script@v7.0.1
         with:
           github-token: ${{ secrets.WEBSITE_REPO_TOKEN }}
