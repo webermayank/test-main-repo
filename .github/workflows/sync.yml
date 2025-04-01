@@ -42,7 +42,18 @@ jobs:
           cat changed-lines.json
           has_doc_change=$(node -e "const data = require('./changed-lines.json'); console.log(data.hasDocumentationChange ? 'true' : 'false')")
           echo "HAS_DOCUMENTATION_CHANGE=$has_doc_change" >> $GITHUB_ENV
-          changed_lines=$(node -e "const data = require('./changed-lines.json'); console.log(Object.entries(data.changes).map(([file, changes]) => changes.map(change => '- ' + file + ' (lines ' + change.lines + ')' + (change.context ? ' [' + change.context.map(c => 'Start: \"' + c.start + '\" | End: \"' + c.end + '\"').join('; ') + ']' : '')).join(' '))")
+          changed_lines=$(node -e "
+            const data = require('./changed-lines.json');
+            const formattedChanges = Object.entries(data.changes).map(([file, changes]) => 
+              changes.map(change => 
+                '- ' + file + ' (lines ' + change.lines + ')' + 
+                (change.context ? ' [' + change.context.map(c => 
+                  'Start: \"' + c.start + '\" | End: \"' + c.end + '\"'
+                ).join('; ') + ']' : '')
+              ).join(' ')
+            ).join('\n');
+            console.log(formattedChanges);
+          ")
           echo "Formatted changed lines: $changed_lines"
           echo "CHANGED_LINES=$changed_lines" >> $GITHUB_ENV
 
