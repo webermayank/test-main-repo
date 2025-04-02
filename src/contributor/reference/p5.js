@@ -1366,6 +1366,9 @@ function shader(p5, fn){
    * 
    * inline test 7
    * 
+   * 
+   * test again 8
+   * 
    * Each `p5.Shader` object contains a shader program that runs on the graphics
    * processing unit (GPU). Shaders can process many pixels or vertices at the
    * same time, making them fast for many graphics tasks. They’re written in a
