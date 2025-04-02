@@ -79,8 +79,15 @@ process.stdin.on("end", () => {
             const content = currentLine.substring(1).trim(); // Remove the '+' and trim
             if (content) {
               addedLines.push(content);
-              // Check if the line is part of a JSDoc comment or starts with '*'
-              if (content.startsWith("/**") || content.startsWith("*")) {
+
+              // Check if the line is part of a JSDoc comment
+              if (content.startsWith("/**")) {
+                inCommentBlock = true;
+                hasDocumentationChange = true;
+              } else if (inCommentBlock && content.startsWith("*")) {
+                hasDocumentationChange = true;
+              } else if (content.startsWith("*/")) {
+                inCommentBlock = false;
                 hasDocumentationChange = true;
               }
             }
