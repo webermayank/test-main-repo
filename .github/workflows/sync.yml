@@ -18,12 +18,17 @@ jobs:
       - name: Checkout main repo
         uses: actions/checkout@v3
         with:
-          fetch-depth: 1
+          fetch-depth: 0  # Need full history to get previous versions
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '16'
+
+      - name: Install dependencies
+        run: |
+          npm install jsdoc-api
+          npm install
 
       - name: Get changed files
         id: changed-files
@@ -32,7 +37,7 @@ jobs:
           files: |
             src/**/*.js
 
-      - name: Get changed lines
+      - name: Get changed lines with JSDoc parser
         id: changed-lines
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
@@ -77,5 +82,5 @@ jobs:
               owner: "webermayank",
               repo: "test-website-repo",
               title: "Documentation Change in Main Repo - Translation Needed",
-              body: `Translation needed for the following files:\n\n${changedLines}\n\nPlease translate these changes into the supported languages: ${supportedLanguages}`
+              body: `Translation needed for the following JSDoc documentation changes:\n\n${changedLines}\n\nPlease translate these changes into the supported languages: ${supportedLanguages}`
             });
