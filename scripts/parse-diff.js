@@ -82,24 +82,22 @@ process.stdin.on("end", () => {
 
               // Check if the line is part of a JSDoc comment
               if (content.startsWith("/**")) {
-                inCommentBlock = true;
+                inCommentBlock = true; // Start of a JSDoc comment block
                 hasDocumentationChange = true;
-              } else if (inCommentBlock && content.startsWith("*")) {
-                hasDocumentationChange = true;
-              } else if (content.startsWith("*/")) {
-                inCommentBlock = false;
+              } else if (inCommentBlock) {
+                // If we are inside a comment block, any line is a documentation change
                 hasDocumentationChange = true;
               }
             }
           } else if (currentLine.startsWith("-")) {
             const content = currentLine.substring(1).trim();
             if (content.startsWith("/**")) {
-              inCommentBlock = true;
+              inCommentBlock = true; // Start of a JSDoc comment block
               hasDocumentationChange = true;
             } else if (inCommentBlock && content.startsWith("*")) {
-              hasDocumentationChange = true;
+              hasDocumentationChange = true; // Inside a comment block
             } else if (content.startsWith("*/")) {
-              inCommentBlock = false;
+              inCommentBlock = false; // End of a JSDoc comment block
               hasDocumentationChange = true;
             }
           }
