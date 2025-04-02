@@ -127,9 +127,9 @@ process.stdin.on('end', () => {
   } else {
     console.log('Changes detected:', jsonOutput);
   }
-
+ console.log("Detected changes:", changes);
+ console.log("Has documentation change:", hasDocumentationChange);
   fs.writeFileSync('changed-lines.json', JSON.stringify(jsonOutput, null, 2));
 });
 
-   console.log("Detected changes:", changes);
-   console.log("Has documentation change:", hasDocumentationChange);
+  
