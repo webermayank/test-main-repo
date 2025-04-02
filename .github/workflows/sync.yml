@@ -35,116 +35,57 @@ jobs:
           files: |
             src/**/*.js
 
-      - name: Debug environment
-        run: |
-          echo "GitHub context: ${{ toJSON(github) }}"
-          echo "Changed files: ${{ steps.changed-files.outputs.all_changed_files }}"
-          echo "Any changed: ${{ steps.changed-files.outputs.any_changed }}"
-
       - name: Get changed lines with JSDoc parser
         id: changed-lines
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
           echo "Changed files: ${{ steps.changed-files.outputs.all_changed_files }}"
-          git diff HEAD^ HEAD --unified=0 -- "src/**/*.js" | node scripts/parse-diff.js || echo "Script ran with issues"
-          # Check if changed-lines.json exists and has content
-          if [ -f "changed-lines.json" ]; then
-            echo "Changed lines JSON exists"
-            cat changed-lines.json
-            # Force documentation change to true for testing
-            echo '{"changes":{"src/test.js":[{"lines":"10-20","context":[{"start":"Test documentation","end":""}]}]},"hasDocumentationChange":true}' > changed-lines.json
-            echo "FORCED_DOC_CHANGE=true" >> $GITHUB_ENV
-          else
-            echo "WARNING: changed-lines.json not created"
-            echo '{"changes":{"src/test.js":[{"lines":"10-20","context":[{"start":"Test documentation","end":""}]}]},"hasDocumentationChange":true}' > changed-lines.json
-            echo "FORCED_DOC_CHANGE=true" >> $GITHUB_ENV
-          fi
+          git diff HEAD^ HEAD --unified=0 -- "src/**/*.js" | node scripts/parse-diff.js
+          echo "Changed lines JSON content:"
+          cat changed-lines.json
+          has_doc_change=$(node -e "const data = require('./changed-lines.json'); console.log(data.hasDocumentationChange ? 'true' : 'false')")
+          echo "HAS_DOCUMENTATION_CHANGE=$has_doc_change" >> $GITHUB_ENV
           
-          # Create a file with formatted changes
+          # Create a file with formatted changes instead of using environment variables
+          # This avoids escaping issues with quotes in the content
           node -e "
-            let data;
-            try {
-              data = require('./changed-lines.json');
-            } catch (err) {
-              console.error('Error reading JSON:', err);
-              data = {changes: {}, hasDocumentationChange: false};
-            }
-            
-            let formattedChanges = '';
-            try {
-              formattedChanges = Object.entries(data.changes).map(([file, changes]) => 
-                changes.map(change => 
-                  '- ' + file + ' (lines ' + change.lines + ')' + 
-                  (change.context ? ' [Context start: ' + 
-                    (change.context[0] ? change.context[0].start : 'No context') + 
-                    (change.context[0] && change.context[0].end ? ' | Context end: ' + change.context[0].end : '') + 
-                  ']' : '')
-                ).join('\n')
-              ).join('\n');
-            } catch (err) {
-              console.error('Error formatting changes:', err);
-              formattedChanges = '- Error formatting changes';
-            }
-            
-            if (!formattedChanges) {
-              formattedChanges = '- No specific changes detected';
-            }
-            
+            const data = require('./changed-lines.json');
+            const formattedChanges = Object.entries(data.changes).map(([file, changes]) => 
+              changes.map(change => 
+                '- ' + file + ' (lines ' + change.lines + ')' + 
+                (change.context ? ' [' + change.context.map(c => 
+                  'Context start: ' + c.start + (c.end ? ' | Context end: ' + c.end : '')
+                ).join('; ') + ']' : '')
+              ).join('\n')
+            ).join('\n');
             require('fs').writeFileSync('formatted-changes.txt', formattedChanges);
-            console.log('Formatted changes written to formatted-changes.txt');
           "
-          echo "Contents of formatted-changes.txt:"
-          cat formatted-changes.txt
+          echo "Formatted changes written to formatted-changes.txt"
 
       - name: Get supported languages
         id: supported-languages
         run: |
-          # Simplified for testing - just hardcode some languages
-          echo "es,fr,hi," > supported-languages.txt
-          echo "SUPPORTED_LANGUAGES=es,fr,hi," >> $GITHUB_ENV
+          git clone https://github.com/webermayank/test-website-repo.git
+          languages=$(ls -d test-website-repo/translations/*/ | sed 's|test-website-repo/translations/||g' | sed 's|/||g' | grep -v 'en' | tr '\n' ', ')
+          echo "SUPPORTED_LANGUAGES=$languages" >> $GITHUB_ENV
+          echo "$languages" > supported-languages.txt
 
-      - name: Debug issue creation
-        run: |
-          echo "Event name: ${{ github.event_name }}"
-          echo "Any changed: ${{ steps.changed-files.outputs.any_changed }}"
-          echo "Has doc change: ${{ env.FORCED_DOC_CHANGE }}"
-          echo "Will create issue: ${{ github.event_name == 'push' && steps.changed-files.outputs.any_changed == 'true' && env.FORCED_DOC_CHANGE == 'true' }}"
-
-      # Always try to create the issue in push events for debugging
       - name: Create issue in website repo
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && steps.changed-files.outputs.any_changed == 'true' && env.HAS_DOCUMENTATION_CHANGE == 'true'
         uses: actions/github-script@v7.0.1
         with:
           github-token: ${{ secrets.WEBSITE_REPO_TOKEN }}
           script: |
             const fs = require('fs');
             
-            let changedLines = 'Default test content';
-            let supportedLanguages = 'es,fr,hi';
+            // Read files instead of using environment variables to avoid escaping issues
+            const changedFiles = "${{ steps.changed-files.outputs.all_changed_files }}";
+            const changedLines = fs.readFileSync('formatted-changes.txt', 'utf8');
+            const supportedLanguages = fs.readFileSync('supported-languages.txt', 'utf8');
             
-            try {
-              changedLines = fs.existsSync('formatted-changes.txt') 
-                ? fs.readFileSync('formatted-changes.txt', 'utf8')
-                : 'No specific changes detected';
-                
-              supportedLanguages = fs.existsSync('supported-languages.txt')
-                ? fs.readFileSync('supported-languages.txt', 'utf8')
-                : 'es,fr,hi';
-            } catch (error) {
-              console.log('Error reading files:', error);
-            }
-            
-            console.log('Creating issue with body:', `Translation needed for the following JSDoc documentation changes:\n\n${changedLines}\n\nPlease translate these changes into the supported languages: ${supportedLanguages}`);
-            
-            try {
-              const result = await github.rest.issues.create({
-                owner: "webermayank",
-                repo: "test-website-repo",
-                title: "Documentation Change in Main Repo - Translation Needed",
-                body: `Translation needed for the following JSDoc documentation changes:\n\n${changedLines}\n\nPlease translate these changes into the supported languages: ${supportedLanguages}`
-              });
-              console.log('Issue created successfully:', result.data.html_url);
-            } catch (error) {
-              console.log('Error creating issue:', error);
-              core.setFailed(`Failed to create issue: ${error.message}`);
-            }
+            await github.rest.issues.create({
+              owner: "webermayank",
+              repo: "test-website-repo",
+              title: "Documentation Change in Main Repo - Translation Needed",
+              body: `Translation needed for the following JSDoc documentation changes:\n\n${changedLines}\n\nPlease translate these changes into the supported languages: ${supportedLanguages}`
+            });
