@@ -8,6 +8,10 @@ process.stdin.on('data', (chunk) => {
 });
 
 process.stdin.on('end', () => {
+  // Add debug log at the beginning
+  console.log('====== DEBUGGING PARSE-DIFF ======');
+  console.log(`Received diff of length: ${diff.length}`);
+  
   if (!diff.trim()) {
     console.log('No diff content received.');
     fs.writeFileSync(
@@ -67,6 +71,7 @@ process.stdin.on('end', () => {
         // Start collecting context
         currentHunk.context = [content.trim()];
         hasDocumentationChange = true;
+        console.log('Documentation change detected in JSDoc start');
       }
       // Within JSDoc block
       else if (inDocBlock) {
@@ -105,9 +110,31 @@ process.stdin.on('end', () => {
             lines: `${docBlockStartLine}-${endLine}`,
             context: [{ start, end }]
           });
+          console.log(`Added change entry for ${currentFile}: lines ${docBlockStartLine}-${endLine}`);
           
           inDocBlock = false;
         }
+      }
+      // Check for any other documentation-like content even if not in a formal block
+      else if (content.includes('@param') || content.includes('@return') || 
+               content.includes('@description') || content.includes('@example')) {
+        hasDocumentationChange = true;
+        console.log('Documentation change detected through JSDoc tag');
+        
+        // Initialize the file in changes if not already there
+        if (!changes[currentFile]) {
+          changes[currentFile] = [];
+        }
+        
+        const lineNumber = hunkStartLine + currentHunk.lines.length;
+        changes[currentFile].push({
+          lines: `${lineNumber}`,
+          context: [{ 
+            start: content.trim().substring(0, 50) + (content.length > 50 ? '...' : ''), 
+            end: '' 
+          }]
+        });
+        console.log(`Added inline JSDoc change at line ${lineNumber}`);
       }
       
       // Track line count for accurate line numbers
@@ -122,8 +149,12 @@ process.stdin.on('end', () => {
       // If we find a removed JSDoc line, that's a documentation change
       if (content.trim().startsWith('/**') || 
           (content.trim().startsWith('*') && !content.trim().startsWith('*/')) || 
-          content.trim().startsWith('*/')) {
+          content.trim().startsWith('*/') ||
+          content.includes('@param') || content.includes('@return') || 
+          content.includes('@description') || content.includes('@example')) {
+        
         hasDocumentationChange = true;
+        console.log('Documentation change detected in removed line');
         
         // Initialize the file in changes if not already there
         if (!changes[currentFile]) {
@@ -145,10 +176,12 @@ process.stdin.on('end', () => {
           changes[currentFile].push({
             lines: `${lineNumber}`,
             context: [{ 
-              start: content.trim().replace(/^\*+\/?\s?/, '').substring(0, 50) + '...', 
+              start: content.trim().replace(/^\*+\/?\s?/, '').substring(0, 50) + 
+                    (content.length > 50 ? '...' : ''), 
               end: '' 
             }]
           });
+          console.log(`Added change entry for removed line at ${lineNumber}`);
         }
       }
       
@@ -177,14 +210,25 @@ process.stdin.on('end', () => {
   // Merge nearby line ranges to avoid fragmentation
   Object.keys(changes).forEach(file => {
     if (changes[file].length > 1) {
+      console.log(`Merging ${changes[file].length} changes in ${file}`);
       changes[file] = mergeLineRanges(changes[file]);
+      console.log(`After merging: ${changes[file].length} changes`);
     }
   });
 
-  const jsonOutput = { changes, hasDocumentationChange };
-  console.log('Detected changes:', changes);
+  // Default to true for testing if we're having detection issues
+  if (Object.keys(changes).length > 0) {
+    hasDocumentationChange = true;
+  }
+
+  console.log('Final changes detection:', JSON.stringify(changes, null, 2));
   console.log('Has documentation change:', hasDocumentationChange);
+  
+  const jsonOutput = { changes, hasDocumentationChange };
   fs.writeFileSync('changed-lines.json', JSON.stringify(jsonOutput, null, 2));
+  
+  // Debug log at the end
+  console.log('====== END DEBUGGING ======');
 });
 
 /**
@@ -218,7 +262,7 @@ function mergeLineRanges(entries) {
         ? parseInt(entries[i].lines.split('-')[1]) 
         : parseInt(entries[i].lines);
         
-      current.lines = `${current.lines.split('-')[0]}-${nextEnd}`;
+      current.lines = `${parseInt(current.lines.split('-')[0])}-${nextEnd}`;
       
       // Merge contexts
       if (entries[i].context && entries[i].context.length > 0) {
