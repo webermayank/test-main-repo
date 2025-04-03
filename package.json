@@ -11,7 +11,8 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "fs": "^0.0.1-security"
+    "fs": "^0.0.1-security",
+    "jsdoc-api": "^9.3.4"
   },
   "devDependencies": {
     "@types/node": "^22.13.11"
