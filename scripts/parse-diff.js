@@ -1,5 +1,5 @@
 const fs = require('fs');
-const jsdoc = require('jsdoc-api');
+const { parse } = require('comment-parser');
 const path = require('path');
 const { execSync } = require('child_process');
 
@@ -14,10 +14,12 @@ if (!fs.existsSync(newDir)) {
   fs.mkdirSync(newDir, { recursive: true });
 }
 
+// Global object to store diff hunk info per file
+const diffInfo = {};
+
 // Read the diff from stdin
 let diff = '';
 process.stdin.setEncoding('utf8');
-
 process.stdin.on('data', (chunk) => {
   diff += chunk;
 });
@@ -27,7 +29,7 @@ process.stdin.on('end', async () => {
     console.log('No diff content received.');
     fs.writeFileSync(
       'changed-lines.json',
-      JSON.stringify({ changes: {}, hasDocumentationChange: false }, null, 2)
+      JSON.stringify({ changes: {}, hasDocumentationChange: false, commit: null }, null, 2)
     );
     return;
   }
@@ -38,15 +40,12 @@ process.stdin.on('end', async () => {
   let currentFile = '';
   const changes = {};
   let hasDocumentationChange = false;
-  
-  // Find all modified files
-  const modifiedFiles = [];
-  const diffInfo = {}; // Object to store hunk info per file
 
+  // Collect modified JS files and diff hunks info
+  const modifiedFiles = [];
   for (let i = 0; i < diffLines.length; i++) {
     const line = diffLines[i];
-    
-    // Detect file name
+    // Detect file name from git diff header
     if (line.startsWith('diff --git')) {
       currentFile = line.split(' ')[2].replace('a/', '');
       if (currentFile.endsWith('.js')) {
@@ -61,70 +60,64 @@ process.stdin.on('end', async () => {
         if (!diffInfo[currentFile]) {
           diffInfo[currentFile] = [];
         }
-        // Store each hunk header information
         diffInfo[currentFile].push({ start, count });
       }
     }
   }
 
   console.log(`Found ${modifiedFiles.length} modified JavaScript files`);
-  
+
   // Process each modified file to detect JSDoc changes
   for (const file of modifiedFiles) {
     try {
-      // Extract the previous version of the file
+      // Extract previous version of file using Git
+      let oldContent = '';
+      const oldFilePath = path.join(oldDir, path.basename(file));
       try {
-        const oldContent = execSync(`git show HEAD^:"${file}"`, { encoding: 'utf8' });
-        const oldFilePath = path.join(oldDir, path.basename(file));
+        oldContent = execSync(`git show HEAD^:"${file}"`, { encoding: 'utf8' });
         fs.writeFileSync(oldFilePath, oldContent);
         console.log(`Extracted previous version of ${file}`);
       } catch (err) {
         console.log(`File ${file} is new, no previous version available`);
       }
-      
-      // Extract the current version of the file
+
+      // Extract current version of file using Git
+      let newContent = '';
+      const newFilePath = path.join(newDir, path.basename(file));
       try {
-        const newContent = execSync(`git show HEAD:"${file}"`, { encoding: 'utf8' });
-        const newFilePath = path.join(newDir, path.basename(file));
+        newContent = execSync(`git show HEAD:"${file}"`, { encoding: 'utf8' });
         fs.writeFileSync(newFilePath, newContent);
         console.log(`Extracted current version of ${file}`);
       } catch (err) {
         console.log(`Cannot extract current version of ${file}: ${err.message}`);
         continue;
       }
-      
-      // Parse JSDoc comments from both versions
-      const oldFilePath = path.join(oldDir, path.basename(file));
-      const newFilePath = path.join(newDir, path.basename(file));
-      
+
+      // Parse JSDoc comments from both versions using comment-parser
       let oldDocs = [];
       let newDocs = [];
-      
       try {
         if (fs.existsSync(oldFilePath)) {
-          oldDocs = await jsdoc.explain({ files: oldFilePath });
+          oldDocs = parse(fs.readFileSync(oldFilePath, 'utf8'));
           console.log(`Parsed ${oldDocs.length} JSDoc comments from old version of ${file}`);
         }
       } catch (err) {
         console.log(`Error parsing old version of ${file}: ${err.message}`);
       }
-      
       try {
         if (fs.existsSync(newFilePath)) {
-          newDocs = await jsdoc.explain({ files: newFilePath });
+          newDocs = parse(fs.readFileSync(newFilePath, 'utf8'));
           console.log(`Parsed ${newDocs.length} JSDoc comments from new version of ${file}`);
         }
       } catch (err) {
         console.log(`Error parsing new version of ${file}: ${err.message}`);
       }
-      
+
       // Compare JSDoc comments to find differences
       const docChanges = compareJSDocComments(oldDocs, newDocs);
-      
       if (docChanges.length > 0) {
         hasDocumentationChange = true;
         changes[file] = [];
-        
         for (const doc of docChanges) {
           const diffRange = getExactChangedLines(file);
           if (diffRange) {
@@ -141,7 +134,16 @@ process.stdin.on('end', async () => {
       console.error(`Error processing file ${file}: ${err.message}`);
     }
   }
-  
+
+  // Retrieve the current commit hash
+  let commitHash = null;
+  try {
+    commitHash = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
+    console.log(`Current commit: ${commitHash}`);
+  } catch (err) {
+    console.error('Error retrieving commit hash:', err.message);
+  }
+
   // Clean up temporary directories
   try {
     fs.rmSync(oldDir, { recursive: true, force: true });
@@ -149,56 +151,41 @@ process.stdin.on('end', async () => {
   } catch (err) {
     console.log(`Error cleaning up temporary directories: ${err.message}`);
   }
-  
-  const jsonOutput = { changes, hasDocumentationChange };
+
+  // Output final JSON with changes, documentation change flag, and commit hash
+  const jsonOutput = { changes, hasDocumentationChange, commit: commitHash };
   console.log('Detected changes:', changes);
   console.log('Has documentation change:', hasDocumentationChange);
+  console.log('Output commit hash:', commitHash);
   fs.writeFileSync('changed-lines.json', JSON.stringify(jsonOutput, null, 2));
 });
 
 /**
- * Compare two sets of JSDoc comments to find differences
- * @param {Array} oldDocs - JSDoc comments from the old version
- * @param {Array} newDocs - JSDoc comments from the new version
- * @returns {Array} - Array of changed docs from the new version
+ * Compare two sets of JSDoc comments to find differences.
+ * For simplicity, this compares the description and tags.
+ * @param {Array} oldDocs - Array of comment objects from the old version.
+ * @param {Array} newDocs - Array of comment objects from the new version.
+ * @returns {Array} - Array of changed comment objects from the new version.
  */
 function compareJSDocComments(oldDocs, newDocs) {
   const changedDocs = [];
   
-  // Map old docs by longname for quick lookup
+  // Create a simple lookup from old docs using the first line of description as key
   const oldDocsMap = {};
   for (const doc of oldDocs) {
-    if (doc.longname) {
-      oldDocsMap[doc.longname] = doc;
+    if (doc.description) {
+      oldDocsMap[doc.description.split('\n')[0].trim()] = doc;
     }
   }
   
-  // Check each new doc for changes or additions
+  // Compare each new doc
   for (const newDoc of newDocs) {
-    if (!newDoc.longname) continue;
+    if (!newDoc.description) continue;
+    const key = newDoc.description.split('\n')[0].trim();
+    const oldDoc = oldDocsMap[key];
     
-    const oldDoc = oldDocsMap[newDoc.longname];
-    
-    // If doc is new or has changed description
-    if (!oldDoc || oldDoc.description !== newDoc.description) {
-      changedDocs.push(newDoc);
-      continue;
-    }
-    
-    // Check for changes in parameters
-    if (hasParamChanges(oldDoc, newDoc)) {
-      changedDocs.push(newDoc);
-      continue;
-    }
-    
-    // Check for changes in return description
-    if (hasReturnChanges(oldDoc, newDoc)) {
-      changedDocs.push(newDoc);
-      continue;
-    }
-    
-    // Check for changes in examples
-    if (hasExampleChanges(oldDoc, newDoc)) {
+    // If new doc is not found or if the entire comment block changed, mark as changed
+    if (!oldDoc || JSON.stringify(oldDoc) !== JSON.stringify(newDoc)) {
       changedDocs.push(newDoc);
     }
   }
@@ -207,156 +194,38 @@ function compareJSDocComments(oldDocs, newDocs) {
 }
 
 /**
- * Check if parameter documentation has changed
- * @param {Object} oldDoc - Old JSDoc object
- * @param {Object} newDoc - New JSDoc object
- * @returns {boolean} - True if parameters have changed
- */
-function hasParamChanges(oldDoc, newDoc) {
-  const oldParams = oldDoc.params || [];
-  const newParams = newDoc.params || [];
-  
-  if (oldParams.length !== newParams.length) {
-    return true;
-  }
-  
-  for (let i = 0; i < newParams.length; i++) {
-    const oldParam = oldParams[i];
-    const newParam = newParams[i];
-    
-    if (!oldParam || !newParam) continue;
-    
-    if (oldParam.description !== newParam.description) {
-      return true;
-    }
-  }
-  
-  return false;
-}
-
-/**
- * Check if return documentation has changed
- * @param {Object} oldDoc - Old JSDoc object
- * @param {Object} newDoc - New JSDoc object
- * @returns {boolean} - True if return descriptions have changed
- */
-function hasReturnChanges(oldDoc, newDoc) {
-  const oldReturns = oldDoc.returns || [];
-  const newReturns = newDoc.returns || [];
-  
-  if (oldReturns.length !== newReturns.length) {
-    return true;
-  }
-  
-  for (let i = 0; i < newReturns.length; i++) {
-    const oldReturn = oldReturns[i];
-    const newReturn = newReturns[i];
-    
-    if (!oldReturn || !newReturn) continue;
-    
-    if (oldReturn.description !== newReturn.description) {
-      return true;
-    }
-  }
-  
-  return false;
-}
-
-/**
- * Check if examples have changed
- * @param {Object} oldDoc - Old JSDoc object
- * @param {Object} newDoc - New JSDoc object
- * @returns {boolean} - True if examples have changed
- */
-function hasExampleChanges(oldDoc, newDoc) {
-  const oldExamples = oldDoc.examples || [];
-  const newExamples = newDoc.examples || [];
-  
-  if (oldExamples.length !== newExamples.length) {
-    return true;
-  }
-  
-  for (let i = 0; i < newExamples.length; i++) {
-    if (oldExamples[i] !== newExamples[i]) {
-      return true;
-    }
-  }
-  
-  return false;
-}
-
-/**
- * Extract line numbers for a specific JSDoc comment
- * @param {Array} docs - Parsed JSDoc comments
- * @param {Object} targetDoc - The specific doc to find line numbers for
- * @returns {Object|null} - Object with start and end line numbers
- */
-function getLineNumbersForDoc(docs, targetDoc) {
-  if (!targetDoc || !targetDoc.meta) {
-    return null;
-  }
-  
-  // JSDoc provides line numbers in the meta property
-  const lineStart = targetDoc.meta.lineno || 0;
-  const lineEnd = targetDoc.meta.lineno + (targetDoc.meta.linecount || 10); // Estimate if linecount not available
-  
-  return {
-    start: lineStart,
-    end: lineEnd
-  };
-}
-
-/**
- * Extract context information from a JSDoc comment
- * @param {Object} doc - JSDoc comment object
- * @returns {Object} - Object with start and end context
+ * Extract context information from a JSDoc comment.
+ * @param {Object} doc - A JSDoc comment object.
+ * @returns {Object} - Object with start and end context strings.
  */
 function getDocContext(doc) {
   const maxWords = 5;
   let description = '';
-  
-  // Combine various documentation parts
   if (doc.description) {
     description += doc.description + ' ';
   }
-  
-  if (doc.params && doc.params.length > 0) {
-    description += doc.params.map(p => p.description || '').join(' ') + ' ';
+  if (doc.tags && doc.tags.length > 0) {
+    description += doc.tags.map(tag => tag.name + ': ' + tag.description).join(' ') + ' ';
   }
-  
-  if (doc.returns && doc.returns.length > 0) {
-    description += doc.returns.map(r => r.description || '').join(' ') + ' ';
-  }
-  
   const words = description.split(/\s+/).filter(word => word);
-  
   if (words.length <= maxWords * 2) {
     return { start: description.trim(), end: '' };
   }
-  
   const startWords = words.slice(0, maxWords).join(' ') + '...';
   const endWords = '...' + words.slice(-maxWords).join(' ');
-  
-  return {
-    start: startWords,
-    end: endWords
-  };
+  return { start: startWords, end: endWords };
 }
 
 /**
- * Get exact changed lines from diff information
- * @param {string} file - File name
- * @returns {Object|null} - Object with start and end line numbers
+ * Get the exact changed lines for a given file using diff info.
+ * @param {string} file - The file name.
+ * @returns {Object|null} - Object with start and end line numbers or null.
  */
 function getExactChangedLines(file) {
   if (diffInfo[file] && diffInfo[file].length > 0) {
-    // For example, use the first hunk; you might combine multiple hunks if needed.
+    // Using the first hunk; you may combine multiple hunks if needed.
     const { start, count } = diffInfo[file][0];
-    return {
-      start,
-      end: start + count - 1
-    };
+    return { start, end: start + count - 1 };
   }
-  // Fallback if no diff info was captured
   return null;
 }

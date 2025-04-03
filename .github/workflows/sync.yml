@@ -22,7 +22,7 @@ jobs:
           node-version: '16'
 
       - name: Install dependencies
-        run: npm install jsdoc-api
+        run: npm install comment-parser
 
       - name: Get changed files
         id: changed-files

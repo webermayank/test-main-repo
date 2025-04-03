@@ -11,6 +11,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "comment-parser": "^1.4.1",
     "fs": "^0.0.1-security",
     "jsdoc-api": "^9.3.4"
   },
