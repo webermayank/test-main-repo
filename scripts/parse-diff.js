@@ -41,7 +41,8 @@ process.stdin.on('end', async () => {
   
   // Find all modified files
   const modifiedFiles = [];
-  
+  const diffInfo = {}; // Object to store hunk info per file
+
   for (let i = 0; i < diffLines.length; i++) {
     const line = diffLines[i];
     
@@ -50,6 +51,18 @@ process.stdin.on('end', async () => {
       currentFile = line.split(' ')[2].replace('a/', '');
       if (currentFile.endsWith('.js')) {
         modifiedFiles.push(currentFile);
+      }
+    } else if (line.startsWith('@@') && currentFile) {
+      // Example hunk header: @@ -1348,0 +1349,2 @@
+      const match = line.match(/\+(\d+)(?:,(\d+))?/);
+      if (match) {
+        const start = parseInt(match[1], 10);
+        const count = match[2] ? parseInt(match[2], 10) : 1;
+        if (!diffInfo[currentFile]) {
+          diffInfo[currentFile] = [];
+        }
+        // Store each hunk header information
+        diffInfo[currentFile].push({ start, count });
       }
     }
   }
@@ -112,18 +125,15 @@ process.stdin.on('end', async () => {
         hasDocumentationChange = true;
         changes[file] = [];
         
-        // For each changed doc, get the line numbers
         for (const doc of docChanges) {
-          // Extract line numbers from the new version
-          const lineNumbers = getLineNumbersForDoc(newDocs, doc);
-          if (lineNumbers) {
-            // Get context for the documentation change
+          const diffRange = getExactChangedLines(file);
+          if (diffRange) {
             const context = getDocContext(doc);
             changes[file].push({
-              lines: `${lineNumbers.start}-${lineNumbers.end}`,
+              lines: `${diffRange.start}-${diffRange.end}`,
               context: [{ start: context.start, end: context.end }]
             });
-            console.log(`Detected change in ${file}: lines ${lineNumbers.start}-${lineNumbers.end}`);
+            console.log(`Detected change in ${file}: lines ${diffRange.start}-${diffRange.end}`);
           }
         }
       }
@@ -331,4 +341,22 @@ function getDocContext(doc) {
     start: startWords,
     end: endWords
   };
+}
+
+/**
+ * Get exact changed lines from diff information
+ * @param {string} file - File name
+ * @returns {Object|null} - Object with start and end line numbers
+ */
+function getExactChangedLines(file) {
+  if (diffInfo[file] && diffInfo[file].length > 0) {
+    // For example, use the first hunk; you might combine multiple hunks if needed.
+    const { start, count } = diffInfo[file][0];
+    return {
+      start,
+      end: start + count - 1
+    };
+  }
+  // Fallback if no diff info was captured
+  return null;
 }
