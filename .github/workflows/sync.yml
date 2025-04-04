@@ -35,35 +35,8 @@ jobs:
         id: changed-lines
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
-          echo "Changed files: ${{ steps.changed-files.outputs.all_changed_files }}"
-          git diff HEAD^ HEAD --unified=0 -- "src/**/*.js" | node scripts/parse-diff.js
-          echo "Changed lines JSON content:"
-          cat changed-lines.json
-          has_doc_change=$(node -e "const data = require('./changed-lines.json'); console.log(data.hasDocumentationChange ? 'true' : 'false')")
-          echo "HAS_DOCUMENTATION_CHANGE=$has_doc_change" >> $GITHUB_ENV
-          
-          # Create a file with only the changed lines (filtering out unnecessary entries)
-          node -e "
-            const fs = require('fs');
-            const data = require('./changed-lines.json');
-            const formattedChanges = Object.entries(data.changes)
-              .map(([file, changes]) => {
-                // Filter out any change objects that don't have a valid 'lines' property
-                const filtered = changes.filter(change => change.lines && change.lines.trim() !== '');
-                if (!filtered.length) return '';
-                return filtered.map(change =>
-                  '- ' + file + ' (lines ' + change.lines + ')' +
-                  (change.context && change.context.length ? ' [' + change.context.map(c =>
-                    'Context start: ' + c.start + (c.end ? ' | Context end: ' + c.end : '')
-                  ).join('; ') + ']' : '')
-                ).join('\n');
-              })
-              .filter(entry => entry) // Remove empty entries
-              .join('\n');
-            fs.writeFileSync('formatted-changes.txt', formattedChanges);
-            console.log('Formatted changes written to formatted-changes.txt');
-          "
-          echo "Formatted changes written to formatted-changes.txt"
+           echo "Changed files: ${{ steps.changed-files.outputs.all_changed_files }}"
+           node scripts/parse-diff.js ${{ steps.changed-files.outputs.all_changed_files }}
 
       - name: Get supported languages
         id: supported-languages
