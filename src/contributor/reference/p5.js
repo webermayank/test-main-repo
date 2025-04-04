@@ -52,8 +52,10 @@ class Shader {
     };
   }
 
+
   hookTypes(hookName) {
     let fullSrc = this._vertSrc;
+    console.log("test outisde");
     let body = this.hooks.vertex[hookName];
     if (!body) {
       body = this.hooks.fragment[hookName];
