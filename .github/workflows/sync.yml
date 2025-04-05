@@ -31,7 +31,7 @@ jobs:
           files: |
             src/**/*.js
 
-      - name: Get changed Changes
+      - name: Get Changes
         id: changed-lines
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
